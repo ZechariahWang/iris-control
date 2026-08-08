@@ -7,6 +7,7 @@ export interface VoiceLevels { input: number; output: number; } // 0..1 smoothed
 export interface VoiceHandlers {
   onStatus?: (text: string) => void;
   onState?: (state: "connecting" | "listening" | "thinking" | "error" | "disconnected") => void;
+  onDelegation?: (task: string) => void;
   onExchange?: (task: string, reply: string) => void;
   onError?: (text: string) => void;
 }

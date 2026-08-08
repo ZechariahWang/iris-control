@@ -6,7 +6,10 @@ import type { UseVoiceResult, VoiceEngine, VoiceLevels, VoiceUiState } from "@/l
 
 const ZERO_LEVELS: VoiceLevels = { input: 0, output: 0 };
 
-export function useVoice(opts: { onExchange: (task: string, reply: string) => void }): UseVoiceResult {
+export function useVoice(opts: {
+  onExchange: (task: string, reply: string) => void;
+  onDelegation?: (task: string) => void;
+}): UseVoiceResult {
   const [state, setState] = useState<VoiceUiState>("idle");
   const [statusText, setStatusText] = useState("");
   const stateRef = useRef<VoiceUiState>("idle");
@@ -49,6 +52,7 @@ export function useVoice(opts: { onExchange: (task: string, reply: string) => vo
             setUi(s);
           }
         },
+        onDelegation: (task) => optsRef.current.onDelegation?.(task),
         onExchange: (task, reply) => optsRef.current.onExchange(task, reply),
         onError: (text) => {
           setStatusText(text);

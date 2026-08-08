@@ -170,6 +170,7 @@ export async function startVoice(handlers: VoiceHandlers): Promise<VoiceEngine> 
     const task = args.task;
     handlers.onStatus?.(`Delegating: ${task}`);
     handlers.onState?.("thinking");
+    handlers.onDelegation?.(task);
     let response: Record<string, unknown>;
     try {
       const r = await fetch("/api/chat", {
