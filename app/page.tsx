@@ -35,17 +35,23 @@ export default function Home() {
     return id;
   }
 
-  function finishLog(id: number) {
+  function finishLog(id: number, result?: string) {
     setLogEntries((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, status: "done" as const } : e))
+      prev.map((e) => (e.id === id ? { ...e, status: "done" as const, result } : e))
     );
   }
 
+  const pendingDelegationRef = useRef<number | null>(null);
+
   const voice = useVoice({
     onDelegation: (task) => {
-      addLog("delegation", task);
+      pendingDelegationRef.current = addLog("delegation", task);
     },
     onExchange: (task, reply) => {
+      if (pendingDelegationRef.current !== null) {
+        finishLog(pendingDelegationRef.current, reply);
+        pendingDelegationRef.current = null;
+      }
       setMessages((prev) => [
         ...prev,
         { role: "user", content: `[voice] ${task}` },
@@ -65,6 +71,7 @@ export default function Home() {
     const next: ChatMessage[] = [...messages, { role: "user", content: text }];
     setMessages(next);
     setBusy(true);
+    let reply = "";
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -72,13 +79,14 @@ export default function Home() {
         body: JSON.stringify({ messages: next }),
       });
       const data = await res.json();
-      const reply = res.ok ? data.reply : `Error: ${data.error}`;
+      reply = res.ok ? data.reply : `Error: ${data.error}`;
       setMessages([...next, { role: "assistant", content: reply }]);
     } catch (err) {
-      setMessages([...next, { role: "assistant", content: `Error: ${(err as Error).message}` }]);
+      reply = `Error: ${(err as Error).message}`;
+      setMessages([...next, { role: "assistant", content: reply }]);
     } finally {
       setBusy(false);
-      finishLog(logId);
+      finishLog(logId, reply);
     }
   }
 

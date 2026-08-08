@@ -79,31 +79,61 @@ export function SideLog({ entries, voiceState }: SideLogProps) {
               initial={{ opacity: 0, x: -28, scale: 0.97 }}
               animate={{ opacity: 1, x: 0, scale: 1 }}
               transition={{ type: "spring", stiffness: 320, damping: 28 }}
-              className="rounded-lg border border-border bg-card px-3 py-2 shadow-sm"
+              className="rounded-lg border border-border bg-card shadow-sm"
             >
-              <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                {entry.kind === "delegation" ? (
-                  <Mic className="h-3 w-3" />
-                ) : (
-                  <Terminal className="h-3 w-3" />
+              <button
+                type="button"
+                disabled={!entry.result}
+                onClick={() => toggleOpen(entry.id)}
+                aria-expanded={openIds.has(entry.id)}
+                className="block w-full px-3 py-2 text-left outline-none focus-visible:ring-1 focus-visible:ring-ring/60 disabled:cursor-default"
+              >
+                <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                  {entry.kind === "delegation" ? (
+                    <Mic className="h-3 w-3" />
+                  ) : (
+                    <Terminal className="h-3 w-3" />
+                  )}
+                  {entry.kind}
+                  <span className="ml-auto normal-case tracking-normal">{entry.time}</span>
+                </div>
+                <p className="mt-1 text-sm leading-snug text-foreground">{entry.text}</p>
+                <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  {entry.status === "running" ? (
+                    <>
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue" />
+                      Running
+                    </>
+                  ) : (
+                    <>
+                      <Check className="h-3 w-3 text-success" />
+                      Done
+                    </>
+                  )}
+                  {entry.result && (
+                    <ChevronDown
+                      className={`ml-auto h-3.5 w-3.5 transition-transform duration-200 ${
+                        openIds.has(entry.id) ? "rotate-180" : ""
+                      }`}
+                    />
+                  )}
+                </div>
+              </button>
+              <AnimatePresence initial={false}>
+                {openIds.has(entry.id) && entry.result && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2, ease: "easeOut" }}
+                    className="overflow-hidden"
+                  >
+                    <div className="mx-3 mb-2 max-h-48 overflow-y-auto rounded-md bg-muted/60 p-2 text-xs leading-relaxed whitespace-pre-wrap text-foreground">
+                      {entry.result}
+                    </div>
+                  </motion.div>
                 )}
-                {entry.kind}
-                <span className="ml-auto normal-case tracking-normal">{entry.time}</span>
-              </div>
-              <p className="mt-1 text-sm leading-snug text-foreground">{entry.text}</p>
-              <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                {entry.status === "running" ? (
-                  <>
-                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue" />
-                    Running
-                  </>
-                ) : (
-                  <>
-                    <Check className="h-3 w-3 text-success" />
-                    Done
-                  </>
-                )}
-              </div>
+              </AnimatePresence>
             </motion.div>
           ))}
         </AnimatePresence>
