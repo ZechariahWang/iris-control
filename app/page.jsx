@@ -1,11 +1,41 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { startVoice } from "./voice";
 
 export default function Chat() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState("");
+  const [voiceActive, setVoiceActive] = useState(false);
+  const stopVoiceRef = useRef(null);
+
+  async function toggleVoice() {
+    if (stopVoiceRef.current) {
+      stopVoiceRef.current();
+      stopVoiceRef.current = null;
+      setVoiceActive(false);
+      setVoiceStatus("");
+      return;
+    }
+    setVoiceStatus("Connecting...");
+    try {
+      stopVoiceRef.current = await startVoice({
+        onStatus: setVoiceStatus,
+        onExchange: (task, reply) =>
+          setMessages((prev) => [
+            ...prev,
+            { role: "user", content: `[voice] ${task}` },
+            { role: "assistant", content: reply },
+          ]),
+        onError: (text) => setVoiceStatus(`Voice error: ${text}`),
+      });
+      setVoiceActive(true);
+    } catch (err) {
+      setVoiceStatus(`Voice error: ${err.message}`);
+    }
+  }
 
   async function send(e) {
     e.preventDefault();
@@ -35,7 +65,21 @@ export default function Chat() {
 
   return (
     <main className="mx-auto flex h-dvh max-w-2xl flex-col p-4">
-      <h1 className="mb-4 text-lg font-semibold">Iris Control</h1>
+      <div className="mb-4 flex items-center gap-3">
+        <h1 className="text-lg font-semibold">Iris Control</h1>
+        <button
+          type="button"
+          onClick={toggleVoice}
+          className={
+            voiceActive
+              ? "rounded-lg bg-red-600 px-3 py-1 text-sm text-white"
+              : "rounded-lg bg-gray-200 px-3 py-1 text-sm text-black"
+          }
+        >
+          {voiceActive ? "Stop voice" : "🎙 Voice"}
+        </button>
+        {voiceStatus && <span className="text-sm text-gray-500">{voiceStatus}</span>}
+      </div>
       <div className="flex-1 space-y-3 overflow-y-auto">
         {messages.map((m, i) => (
           <div
