@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Check, Mic, Terminal } from "lucide-react";
+import { Check, ChevronDown, Mic, Terminal } from "lucide-react";
 import type { VoiceUiState } from "@/lib/voice/types";
 
 export interface LogEntry {
@@ -11,6 +11,7 @@ export interface LogEntry {
   text: string;
   time: string;
   status: "running" | "done";
+  result?: string;
 }
 
 const DOT_CLASS: Record<VoiceUiState, string> = {
@@ -29,6 +30,19 @@ interface SideLogProps {
 
 export function SideLog({ entries, voiceState }: SideLogProps) {
   const listRef = useRef<HTMLDivElement>(null);
+  const [openIds, setOpenIds] = useState<Set<number>>(new Set());
+
+  function toggleOpen(id: number) {
+    setOpenIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }
 
   useEffect(() => {
     const el = listRef.current;

@@ -165,9 +165,37 @@ export async function startVoice(handlers: VoiceHandlers): Promise<VoiceEngine> 
 
   let session: Session | null = null;
 
+  // Track running tasks so repeated tool calls don't spawn duplicate agent runs:
+  // the model re-calls a NON_BLOCKING tool while a slow task is still working
+  const inFlight = new Set<string>();
+
+  function respond(call: FunctionCall, response: Record<string, unknown>) {
+    try {
+      session!.sendToolResponse({
+        functionResponses: [{
+          id: call.id,
+          name: call.name,
+          response: response,
+          scheduling: FunctionResponseScheduling.INTERRUPT,
+        }],
+      });
+    } catch { /* session closed while task ran */ }
+  }
+
   async function runDelegation(call: FunctionCall) {
     const args = call.args as unknown as DelegateArgs;
     const task = args.task;
+    const key = task.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+    if (inFlight.has(key)) {
+      respond(call, {
+        status: "already_running",
+        note: "This task is already in progress; tell Zech it is still working.",
+      });
+      return;
+    }
+    inFlight.add(key);
+
     handlers.onStatus?.(`Delegating: ${task}`);
     handlers.onState?.("thinking");
     handlers.onDelegation?.(task);
@@ -187,19 +215,12 @@ export async function startVoice(handlers: VoiceHandlers): Promise<VoiceEngine> 
       }
     } catch (e) {
       response = { status: "error", note: (e as Error).message };
+    } finally {
+      inFlight.delete(key);
     }
     handlers.onStatus?.("Listening");
     handlers.onState?.("listening");
-    try {
-      session!.sendToolResponse({
-        functionResponses: [{
-          id: call.id,
-          name: call.name,
-          response: response,
-          scheduling: FunctionResponseScheduling.INTERRUPT,
-        }],
-      });
-    } catch { /* session closed while task ran */ }
+    respond(call, response);
   }
 
   session = await ai.live.connect({
