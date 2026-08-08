@@ -71,97 +71,57 @@ float fbm(vec3 p) {
 `;
 
 // uTime is already speed-scaled on the JS side, so noise phase uses it directly.
-export const coreVertex = /* glsl */ `
+export const blobVertex = /* glsl */ `
 uniform float uTime;
 uniform float uDistort;
 uniform float uNoiseScale;
+uniform float uPhase;
 
 varying vec3 vNormal;
 varying vec3 vViewDir;
 varying vec3 vPos;
-varying float vDisp;
 
 ${simplexNoise}
 
 void main() {
-  float swell = snoise(position * uNoiseScale + uTime) * 0.6;
-  float detail = snoise(position * uNoiseScale * 2.6 + uTime * 1.4) * 0.28;
-  float grain = snoise(position * uNoiseScale * 5.5 + uTime * 1.9) * 0.12;
-  float noise = swell + detail + grain;
+  float noise = fbm(position * uNoiseScale + uTime * 0.6 + uPhase);
   vec3 displaced = position + normal * noise * uDistort;
   vec4 worldPos = modelMatrix * vec4(displaced, 1.0);
   vNormal = normalize(mat3(modelMatrix) * normal);
   vViewDir = normalize(cameraPosition - worldPos.xyz);
   vPos = position;
-  vDisp = noise;
   gl_Position = projectionMatrix * viewMatrix * worldPos;
 }
 `;
 
-export const coreFragment = /* glsl */ `
+// Soft fluid-gradient blob: color drifts between the state color and the layer
+// tint, the rim dissolves to transparent, the center lifts toward white.
+export const blobFragment = /* glsl */ `
 uniform vec3 uColor;
+uniform vec3 uTint;
 uniform float uBrightness;
 uniform float uLevel;
+uniform float uAlpha;
 uniform float uTime;
+uniform float uPhase;
 
 varying vec3 vNormal;
 varying vec3 vViewDir;
 varying vec3 vPos;
-varying float vDisp;
 
 ${simplexNoise}
 
 void main() {
   vec3 normal = normalize(vNormal);
   vec3 viewDir = normalize(vViewDir);
+  float facing = max(dot(normal, viewDir), 0.0);
 
-  // Ridges catch light, valleys fall into shadow: sells the surface as physical
-  float relief = clamp(0.78 + vDisp * 1.5, 0.45, 1.35);
+  float drift = fbm(vPos * 0.9 + uTime * 0.45 + uPhase) * 0.7;
+  vec3 color = mix(uTint, uColor, smoothstep(-0.6, 0.7, drift + vPos.y * 0.35));
+  color = mix(color, vec3(1.0), pow(facing, 3.0) * 0.45 + 0.08);
+  color *= uBrightness * (1.0 + uLevel * 0.8);
 
-  // Ridged noise: thin bright veins of energy where fbm crosses zero
-  float bands = fbm(vPos * 2.4 + uTime * 0.7);
-  float vein = pow(max(0.0, 1.0 - abs(bands) * 2.4), 4.0);
-  vec3 hot = mix(uColor, vec3(1.0), 0.35);
-
-  // Soft color-tinted inner light where the surface faces the camera
-  float facing = pow(max(dot(normal, viewDir), 0.0), 3.0);
-
-  float rim = pow(1.0 - max(dot(normal, viewDir), 0.0), 2.5);
-
-  vec3 color = uColor * (0.35 + 0.75 * uBrightness) * relief;
-  color += hot * vein * uBrightness * (0.9 + uLevel * 2.4);
-  color += mix(uColor, vec3(1.0), 0.2) * facing * uBrightness * 0.45;
-  color += uColor * rim * (0.9 + uBrightness);
-
-  gl_FragColor = vec4(color, 1.0);
-}
-`;
-
-export const glowVertex = /* glsl */ `
-varying vec3 vNormal;
-varying vec3 vViewDir;
-
-void main() {
-  vec4 worldPos = modelMatrix * vec4(position, 1.0);
-  vNormal = normalize(mat3(modelMatrix) * normal);
-  vViewDir = normalize(cameraPosition - worldPos.xyz);
-  gl_Position = projectionMatrix * viewMatrix * worldPos;
-}
-`;
-
-// Rendered on the back side, so visible normals face away from the camera.
-export const glowFragment = /* glsl */ `
-uniform vec3 uColor;
-uniform float uBrightness;
-
-varying vec3 vNormal;
-varying vec3 vViewDir;
-
-void main() {
-  vec3 normal = normalize(vNormal);
-  vec3 viewDir = normalize(vViewDir);
-  float facing = max(-dot(normal, viewDir), 0.0);
-  float falloff = pow(facing, 2.0);
-  gl_FragColor = vec4(uColor * uBrightness, falloff * 0.55);
+  float alpha = smoothstep(0.02, 0.6, facing) * uAlpha;
+  gl_FragColor = vec4(color, alpha);
 }
 `;

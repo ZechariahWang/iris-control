@@ -71,11 +71,14 @@ export default function Home() {
     <main className="relative h-dvh overflow-hidden bg-background">
       <Orb state={voice.state} getLevels={voice.getLevels} onClick={voice.toggle} />
 
-      <div className="pointer-events-none fixed left-5 top-5 flex items-center gap-2.5 font-mono text-xs tracking-[0.35em] text-muted-foreground">
-        <span
-          className={`h-1.5 w-1.5 rounded-full transition-colors duration-500 ${dotClass[voice.state]}`}
-        />
-        IRIS
+      <div className="pointer-events-none fixed left-6 top-6">
+        <div className="flex items-center gap-2">
+          <span
+            className={`h-1.5 w-1.5 rounded-full transition-colors duration-500 ${dotClass[voice.state]}`}
+          />
+          <h1 className="text-lg font-semibold tracking-tight text-foreground">Iris</h1>
+        </div>
+        <p className="text-sm text-muted-foreground">Voice assistant</p>
       </div>
 
       <div className="pointer-events-none absolute left-1/2 top-[calc(50%+min(24vmin,240px))] -translate-x-1/2">
