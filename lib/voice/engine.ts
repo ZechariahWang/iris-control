@@ -1,6 +1,14 @@
 "use client";
 
-import { GoogleGenAI, Modality } from "@google/genai";
+import {
+  Behavior,
+  FunctionResponseScheduling,
+  GoogleGenAI,
+  Modality,
+  Type,
+} from "@google/genai";
+import type { FunctionCall, Session } from "@google/genai";
+import type { VoiceEngine, VoiceHandlers, VoiceLevels } from "@/lib/voice/types";
 
 const SYSTEM_PROMPT = `You are Iris, Zech's voice assistant. Be brief and professional:
 answer in one short sentence whenever possible, two at most unless he asks for
@@ -32,11 +40,11 @@ const tools = [{
   functionDeclarations: [{
     name: "delegate_to_openclaw",
     description: "Hand a task to OpenClaw, the agent running on Zech's computer with access to his email, Discord, cron jobs, files, and shell.",
-    behavior: "NON_BLOCKING",
+    behavior: Behavior.NON_BLOCKING,
     parameters: {
-      type: "OBJECT",
+      type: Type.OBJECT,
       properties: {
-        task: { type: "STRING", description: "The task, phrased as a clear instruction." },
+        task: { type: Type.STRING, description: "The task, phrased as a clear instruction." },
       },
       required: ["task"],
     },
@@ -46,8 +54,26 @@ const tools = [{
 const IN_RATE = 16000;
 const OUT_RATE = 24000;
 const MIC_TAIL_S = 0.4; // keep mic muted briefly after speech ends
+const FFT_SIZE = 512;
+const LEVEL_GAIN = 4;
 
-function floatToPcm16Base64(f32) {
+interface TokenResponse {
+  token: string;
+  model: string;
+  voice: string;
+  error?: string;
+}
+
+interface ChatResponse {
+  reply: string;
+  error?: string;
+}
+
+interface DelegateArgs {
+  task: string;
+}
+
+function floatToPcm16Base64(f32: Float32Array): string {
   const i16 = new Int16Array(f32.length);
   for (let i = 0; i < f32.length; i++) {
     const s = Math.max(-1, Math.min(1, f32[i]));
@@ -61,7 +87,7 @@ function floatToPcm16Base64(f32) {
   return btoa(bin);
 }
 
-function pcm16Base64ToFloat(b64) {
+function pcm16Base64ToFloat(b64: string): Float32Array<ArrayBuffer> {
   const bin = atob(b64);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) {
@@ -75,10 +101,21 @@ function pcm16Base64ToFloat(b64) {
   return f32;
 }
 
-// handlers: { onStatus(text), onExchange(task, reply), onError(text) }
-export async function startVoice(handlers) {
+function readRms(analyser: AnalyserNode, data: Float32Array<ArrayBuffer>): number {
+  analyser.getFloatTimeDomainData(data);
+  let sum = 0;
+  for (let i = 0; i < data.length; i++) {
+    sum += data[i] * data[i];
+  }
+  const level = Math.sqrt(sum / data.length) * LEVEL_GAIN;
+  return Math.min(1, level);
+}
+
+export async function startVoice(handlers: VoiceHandlers): Promise<VoiceEngine> {
+  handlers.onState?.("connecting");
+
   const res = await fetch("/api/voice-token", { method: "POST" });
-  const data = await res.json();
+  const data = (await res.json()) as TokenResponse;
   if (!res.ok) {
     throw new Error(data.error || "could not get voice token");
   }
@@ -90,16 +127,21 @@ export async function startVoice(handlers) {
 
   // Speaker: schedule PCM chunks back to back on one playhead
   const outCtx = new AudioContext({ sampleRate: OUT_RATE });
+  const master = outCtx.createGain();
+  const outAnalyser = outCtx.createAnalyser();
+  outAnalyser.fftSize = FFT_SIZE;
+  master.connect(outAnalyser);
+  outAnalyser.connect(outCtx.destination);
   let playhead = 0;
-  let liveSources = [];
+  let liveSources: AudioBufferSourceNode[] = [];
 
-  function play(b64) {
+  function play(b64: string) {
     const f32 = pcm16Base64ToFloat(b64);
     const buf = outCtx.createBuffer(1, f32.length, OUT_RATE);
     buf.copyToChannel(f32, 0);
     const src = outCtx.createBufferSource();
     src.buffer = buf;
-    src.connect(outCtx.destination);
+    src.connect(master);
     const startAt = Math.max(outCtx.currentTime, playhead);
     src.start(startAt);
     playhead = startAt + buf.duration;
@@ -117,23 +159,25 @@ export async function startVoice(handlers) {
     playhead = 0;
   }
 
-  function isPlaying() {
+  function isPlaying(): boolean {
     return outCtx.currentTime < playhead + MIC_TAIL_S;
   }
 
-  let session = null;
+  let session: Session | null = null;
 
-  async function runDelegation(call) {
-    const task = call.args.task;
+  async function runDelegation(call: FunctionCall) {
+    const args = call.args as unknown as DelegateArgs;
+    const task = args.task;
     handlers.onStatus?.(`Delegating: ${task}`);
-    let response;
+    handlers.onState?.("thinking");
+    let response: Record<string, unknown>;
     try {
       const r = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: [{ role: "user", content: task }] }),
       });
-      const d = await r.json();
+      const d = (await r.json()) as ChatResponse;
       if (r.ok) {
         response = { status: "done", result: d.reply.slice(-3000) || "(no output)" };
         handlers.onExchange?.(task, d.reply);
@@ -141,12 +185,18 @@ export async function startVoice(handlers) {
         response = { status: "error", note: d.error };
       }
     } catch (e) {
-      response = { status: "error", note: e.message };
+      response = { status: "error", note: (e as Error).message };
     }
     handlers.onStatus?.("Listening");
+    handlers.onState?.("listening");
     try {
-      session.sendToolResponse({
-        functionResponses: [{ id: call.id, name: call.name, response: response, scheduling: "INTERRUPT" }],
+      session!.sendToolResponse({
+        functionResponses: [{
+          id: call.id,
+          name: call.name,
+          response: response,
+          scheduling: FunctionResponseScheduling.INTERRUPT,
+        }],
       });
     } catch { /* session closed while task ran */ }
   }
@@ -171,8 +221,14 @@ export async function startVoice(handlers) {
           if (call.name === "delegate_to_openclaw") runDelegation(call); // not awaited: keep audio flowing
         }
       },
-      onerror: (e) => handlers.onError?.(e.message || String(e)),
-      onclose: () => handlers.onStatus?.("Voice disconnected"),
+      onerror: (e) => {
+        handlers.onError?.(e.message || String(e));
+        handlers.onState?.("error");
+      },
+      onclose: () => {
+        handlers.onStatus?.("Voice disconnected");
+        handlers.onState?.("disconnected");
+      },
     },
   });
 
@@ -182,13 +238,16 @@ export async function startVoice(handlers) {
   });
   const inCtx = new AudioContext({ sampleRate: IN_RATE });
   const micSource = inCtx.createMediaStreamSource(stream);
+  const inAnalyser = inCtx.createAnalyser();
+  inAnalyser.fftSize = FFT_SIZE;
+  micSource.connect(inAnalyser);
   // ponytail: ScriptProcessor is deprecated but universal; move to AudioWorklet if it disappears
   const proc = inCtx.createScriptProcessor(4096, 1, 1);
   proc.onaudioprocess = (e) => {
     if (isPlaying()) return;
     const b64 = floatToPcm16Base64(e.inputBuffer.getChannelData(0));
     try {
-      session.sendRealtimeInput({ audio: { data: b64, mimeType: "audio/pcm;rate=16000" } });
+      session!.sendRealtimeInput({ audio: { data: b64, mimeType: "audio/pcm;rate=16000" } });
     } catch { /* connection mid-teardown */ }
   };
   micSource.connect(proc);
@@ -198,14 +257,27 @@ export async function startVoice(handlers) {
   mute.connect(inCtx.destination);
 
   handlers.onStatus?.("Listening");
+  handlers.onState?.("listening");
 
-  return function stop() {
-    try { session.close(); } catch { /* already closed */ }
+  const inData = new Float32Array(FFT_SIZE);
+  const outData = new Float32Array(FFT_SIZE);
+  const levels: VoiceLevels = { input: 0, output: 0 };
+
+  function getLevels(): VoiceLevels {
+    levels.input = readRms(inAnalyser, inData);
+    levels.output = readRms(outAnalyser, outData);
+    return levels;
+  }
+
+  function stop() {
+    try { session!.close(); } catch { /* already closed */ }
     proc.disconnect();
     micSource.disconnect();
     for (const track of stream.getTracks()) track.stop();
     inCtx.close();
     flush();
     outCtx.close();
-  };
+  }
+
+  return { getLevels, isSpeaking: isPlaying, stop };
 }

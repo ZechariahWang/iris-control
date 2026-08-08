@@ -1,15 +1,25 @@
-export async function POST(request) {
-  const body = await request.json();
+interface ChatRequestBody {
+  messages?: unknown;
+}
+
+export async function POST(request: Request) {
+  const openclawUrl = process.env.OPENCLAW_URL;
+  const openclawToken = process.env.OPENCLAW_TOKEN;
+  if (!openclawUrl || !openclawToken) {
+    return Response.json({ error: "OpenClaw env vars not set" }, { status: 500 });
+  }
+
+  const body: ChatRequestBody = await request.json();
   const messages = body.messages;
   if (!Array.isArray(messages)) {
     return Response.json({ error: "messages must be an array" }, { status: 400 });
   }
 
-  const base = process.env.OPENCLAW_URL.replace(/\/+$/, "");
+  const base = openclawUrl.replace(/\/+$/, "");
   const res = await fetch(`${base}/v1/chat/completions`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${process.env.OPENCLAW_TOKEN}`,
+      Authorization: `Bearer ${openclawToken}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
