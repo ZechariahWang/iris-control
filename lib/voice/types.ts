@@ -1,4 +1,4 @@
-export type VoiceUiState = "idle" | "connecting" | "listening" | "speaking" | "thinking" | "error";
+export type VoiceUiState = "idle" | "armed" | "connecting" | "listening" | "speaking" | "thinking" | "error";
 
 export interface ChatMessage { role: "user" | "assistant"; content: string; }
 

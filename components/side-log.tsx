@@ -16,6 +16,7 @@ export interface LogEntry {
 
 const DOT_CLASS: Record<VoiceUiState, string> = {
   idle: "bg-muted-foreground",
+  armed: "bg-primary/60",
   connecting: "bg-blue",
   listening: "bg-primary",
   speaking: "bg-accent",

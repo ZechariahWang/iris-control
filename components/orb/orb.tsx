@@ -7,6 +7,7 @@ import styles from "./orb.module.css";
 // [ambient periwinkle, accent, deep violet, core]
 const PALETTES: Record<VoiceUiState, [string, string, string, string]> = {
   idle: ["#8b9af3", "#3ecfc4", "#7a6cf0", "#eef3ff"],
+  armed: ["#8b9af3", "#3ecfc4", "#7a6cf0", "#eef3ff"],
   connecting: ["#7d95f5", "#4f74f0", "#5f6cf0", "#e8eeff"],
   listening: ["#8b9af3", "#00e0cf", "#7a6cf0", "#f0fdfb"],
   speaking: ["#7fa5f5", "#38d6f0", "#6d7df2", "#ecfaff"],
@@ -18,6 +19,7 @@ const PALETTES: Record<VoiceUiState, [string, string, string, string]> = {
 // changes glide instead of snapping the animation phase
 const SPIN_SPEED: Record<VoiceUiState, number> = {
   idle: 14,
+  armed: 10,
   connecting: 36,
   listening: 20,
   speaking: 30,

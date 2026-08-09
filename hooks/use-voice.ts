@@ -2,9 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { startVoice } from "@/lib/voice/engine";
+import { startWake, stopWake } from "@/lib/voice/wake";
 import type { UseVoiceResult, VoiceEngine, VoiceLevels, VoiceUiState } from "@/lib/voice/types";
 
 const ZERO_LEVELS: VoiceLevels = { input: 0, output: 0 };
+const SILENCE_MS = 15_000;
+// ponytail: 0.08 RMS speech threshold (LEVEL_GAIN=4 baked into readRms);
+// raise if room noise keeps the session alive, lower if it dozes mid-sentence.
+const SPEECH_RMS = 0.08;
 
 export function useVoice(opts: {
   onExchange: (task: string, reply: string) => void;
@@ -16,6 +21,7 @@ export function useVoice(opts: {
   const engineRef = useRef<VoiceEngine | null>(null);
   const intervalRef = useRef<number | null>(null);
   const genRef = useRef(0);
+  const quietMsRef = useRef(0);
   const optsRef = useRef(opts);
   useEffect(() => {
     optsRef.current = opts;
@@ -46,6 +52,7 @@ export function useVoice(opts: {
       const engine = await startVoice({
         onStatus: (text) => setStatusText(text),
         onState: (s) => {
+          if (gen !== genRef.current) return;
           if (s === "disconnected") {
             if (stateRef.current !== "error") setUi("idle");
           } else {
@@ -55,6 +62,7 @@ export function useVoice(opts: {
         onDelegation: (task) => optsRef.current.onDelegation?.(task),
         onExchange: (task, reply) => optsRef.current.onExchange(task, reply),
         onError: (text) => {
+          if (gen !== genRef.current) return;
           setStatusText(text);
           setUi("error");
         },
@@ -64,6 +72,7 @@ export function useVoice(opts: {
         return;
       }
       engineRef.current = engine;
+      quietMsRef.current = 0;
       intervalRef.current = window.setInterval(() => {
         const e = engineRef.current;
         if (!e) return;
@@ -73,6 +82,14 @@ export function useVoice(opts: {
         } else if (!speaking && stateRef.current === "speaking") {
           setUi("listening");
         }
+        const busy =
+          speaking || stateRef.current !== "listening" || e.getLevels().input > SPEECH_RMS;
+        if (busy) {
+          quietMsRef.current = 0;
+        } else {
+          quietMsRef.current += 100;
+          if (quietMsRef.current >= SILENCE_MS) void arm();
+        }
       }, 100);
     } catch (e) {
       if (gen !== genRef.current) return;
@@ -81,13 +98,28 @@ export function useVoice(opts: {
     }
   }
 
+  async function arm() {
+    stopEngine();
+    setStatusText('Say "Hey Iris"');
+    setUi("armed");
+    try {
+      await startWake(() => {
+        void stopWake();
+        setStatusText("");
+        setUi("connecting");
+        void start();
+      });
+    } catch (e) {
+      setStatusText((e as Error).message || String(e));
+      setUi("error");
+    }
+  }
+
   function toggle() {
     if (stateRef.current === "idle" || stateRef.current === "error") {
-      stopEngine();
-      setStatusText("");
-      setUi("connecting");
-      void start();
+      void arm();
     } else {
+      void stopWake();
       stopEngine();
       setStatusText("");
       setUi("idle");
@@ -104,6 +136,7 @@ export function useVoice(opts: {
     return () => {
       // eslint-disable-next-line react-hooks/exhaustive-deps -- generation counter, latest value is intended
       genRef.current++;
+      void stopWake();
       if (intervalRef.current !== null) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
