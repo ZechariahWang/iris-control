@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Vendored onnxruntime-web runtime served as a static asset
+    "public/ort/**",
   ]),
 ]);
 

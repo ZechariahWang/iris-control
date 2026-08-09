@@ -54,7 +54,8 @@ export function useVoice(opts: {
         onState: (s) => {
           if (gen !== genRef.current) return;
           if (s === "disconnected") {
-            if (stateRef.current !== "error") setUi("idle");
+            // Server-side session drop: re-arm so the hands-free loop survives
+            if (stateRef.current !== "error") void arm();
           } else {
             setUi(s);
           }
