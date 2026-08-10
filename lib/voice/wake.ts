@@ -3,8 +3,7 @@ import * as ort from "onnxruntime-web";
 // openWakeWord pipeline: 80ms audio chunks -> melspectrogram model ->
 // embedding model (76 mel frames, stride 8) -> classifier (16 embeddings) -> score.
 // Runs fully locally via WASM; nothing leaves the device while armed.
-// ponytail: swap to /hey-iris.onnx once trained via the openWakeWord colab
-const WAKE_MODEL_PATH = "/hey_jarvis_v0.1.onnx";
+const WAKE_MODEL_PATH = "/iris.onnx";
 const CHUNK_SAMPLES = 1280; // 80ms at 16kHz
 const MEL_BINS = 32;
 const MEL_WINDOW = 76; // mel frames per embedding
