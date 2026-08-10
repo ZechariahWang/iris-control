@@ -18,10 +18,10 @@ const PALETTES: Record<VoiceUiState, [string, string, string, string]> = {
 // Rotation speed in degrees per second, damped in the rAF loop so state
 // changes glide instead of snapping the animation phase
 const SPIN_SPEED: Record<VoiceUiState, number> = {
-  idle: 14,
-  armed: 10,
-  connecting: 36,
-  listening: 20,
+  idle: 30,
+  armed: 30,
+  connecting: 50,
+  listening: 30,
   speaking: 30,
   thinking: 105,
   error: 5,
